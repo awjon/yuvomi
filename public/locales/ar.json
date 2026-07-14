@@ -1084,6 +1084,8 @@
         "googleCalendarPrimary": "أساسي",
         "googleReadonly": "للقراءة فقط",
         "googleReadonlyHint": "يقرأ Yuvomi الأحداث من تقويم Google لكنه لا يكتب أيًا منها مرة أخرى.",
+        "googleReconsentHint": "مطلوب أذونات Google جديدة. أعد الاتصال مرة واحدة لتفعيل مزامنة المهام وDrive وأعياد الميلاد — تستمر مزامنة التقويم في هذه الأثناء.",
+        "googleReconnect": "إعادة الاتصال بـ Google",
         "calendarSwitched": "تم تغيير التقويم – جارٍ المزامنة…",
         "appleCalendar": "تقويم Apple (iCloud)",
         "syncNow": "المزامنة الآن",

@@ -1084,6 +1084,8 @@
         "googleCalendarPrimary": "Κύριο",
         "googleReadonly": "Μόνο ανάγνωση",
         "googleReadonlyHint": "Το Yuvomi διαβάζει γεγονότα από το Google Calendar αλλά δεν γράφει κανένα πίσω.",
+        "googleReconsentHint": "Απαιτούνται νέα δικαιώματα Google. Επανασυνδεθείτε μία φορά για να ενεργοποιήσετε τον συγχρονισμό Εργασιών, Drive και γενεθλίων — ο συγχρονισμός ημερολογίου συνεχίζει να λειτουργεί στο μεταξύ.",
+        "googleReconnect": "Επανασύνδεση Google",
         "calendarSwitched": "Το ημερολόγιο άλλαξε – συγχρονισμός…",
         "appleCalendar": "Apple Calendar (iCloud)",
         "syncNow": "Συγχρονισμός τώρα",

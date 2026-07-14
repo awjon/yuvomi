@@ -1090,6 +1090,8 @@
         "googleCalendarPrimary": "Elsődleges",
         "googleReadonly": "Csak olvasható",
         "googleReadonlyHint": "A Yuvomi olvassa a Google Naptár eseményeit, de nem ír vissza semmit.",
+        "googleReconsentHint": "Új Google-engedélyek szükségesek. Csatlakozzon újra egyszer a Feladatok, a Drive és a születésnapok szinkronizálásának engedélyezéséhez – a naptárszinkronizálás közben tovább működik.",
+        "googleReconnect": "Google újracsatlakoztatása",
         "calendarSwitched": "Naptár váltva – szinkronizálás…",
         "appleCalendar": "Apple Naptár (iCloud)",
         "syncNow": "Szinkronizálás most",

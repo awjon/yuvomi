@@ -1084,6 +1084,8 @@
         "googleCalendarPrimary": "メイン",
         "googleReadonly": "読み取り専用",
         "googleReadonlyHint": "Yuvomi は Google カレンダーのイベントを読み取りますが、書き戻しません。",
+        "googleReconsentHint": "新しい Google の権限が必要です。タスク、Drive、誕生日の同期を有効にするために一度再接続してください。その間もカレンダーの同期は動作し続けます。",
+        "googleReconnect": "Google を再接続",
         "calendarSwitched": "カレンダーを切り替えました – 同期中…",
         "appleCalendar": "Apple カレンダー (iCloud)",
         "syncNow": "今すぐ同期",

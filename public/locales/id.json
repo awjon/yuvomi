@@ -1108,6 +1108,8 @@
         "googleCalendarPrimary": "Utama",
         "googleReadonly": "Hanya baca",
         "googleReadonlyHint": "Yuvomi membaca acara dari Google Calendar, tetapi tidak menulis kembali.",
+        "googleReconsentHint": "Izin Google baru diperlukan. Sambungkan kembali sekali untuk mengaktifkan sinkronisasi Tugas, Drive, dan ulang tahun — sinkronisasi kalender tetap berjalan sementara itu.",
+        "googleReconnect": "Sambungkan ulang Google",
         "calendarSwitched": "Kalender diganti – sedang menyinkronkan…",
         "appleCalendar": "Apple Calendar (iCloud)",
         "syncNow": "Sinkronkan sekarang",

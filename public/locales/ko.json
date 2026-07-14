@@ -1108,6 +1108,8 @@
         "googleCalendarPrimary": "기본",
         "googleReadonly": "읽기 전용",
         "googleReadonlyHint": "Yuvomi는 Google 캘린더에서 일정을 읽지만 다시 쓰지는 않습니다.",
+        "googleReconsentHint": "새로운 Google 권한이 필요합니다. 작업, Drive 및 생일 동기화를 활성화하려면 한 번 다시 연결하세요. 그동안 캘린더 동기화는 계속 작동합니다.",
+        "googleReconnect": "Google 다시 연결",
         "calendarSwitched": "캘린더가 변경되었습니다 – 동기화 중…",
         "appleCalendar": "Apple 캘린더 (iCloud)",
         "syncNow": "지금 동기화",

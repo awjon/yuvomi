@@ -1108,6 +1108,8 @@
         "googleCalendarPrimary": "اصلی",
         "googleReadonly": "فقط‌خواندنی",
         "googleReadonlyHint": "Yuvomi رویدادها را از Google Calendar می‌خواند اما چیزی بازنویسی نمی‌کند.",
+        "googleReconsentHint": "مجوزهای جدید Google لازم است. یک بار دوباره متصل شوید تا همگام‌سازی وظایف، Drive و تولدها فعال شود — همگام‌سازی تقویم در این میان کار می‌کند.",
+        "googleReconnect": "اتصال مجدد به Google",
         "calendarSwitched": "تقویم تعویض شد – در حال همگام‌سازی…",
         "appleCalendar": "Apple Calendar (iCloud)",
         "syncNow": "اکنون همگام‌سازی کن",

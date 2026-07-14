@@ -1090,6 +1090,8 @@
         "googleCalendarPrimary": "Chính",
         "googleReadonly": "Chỉ đọc",
         "googleReadonlyHint": "Yuvomi đọc sự kiện từ Google Calendar nhưng không ghi đè lại.",
+        "googleReconsentHint": "Cần có quyền Google mới. Kết nối lại một lần để bật đồng bộ Công việc, Drive và sinh nhật — trong thời gian đó đồng bộ lịch vẫn hoạt động.",
+        "googleReconnect": "Kết nối lại Google",
         "calendarSwitched": "Đã chuyển đổi lịch – đang đồng bộ…",
         "appleCalendar": "Apple Calendar (iCloud)",
         "syncNow": "Đồng bộ ngay",

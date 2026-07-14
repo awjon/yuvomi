@@ -1084,6 +1084,8 @@
         "googleCalendarPrimary": "प्राथमिक",
         "googleReadonly": "केवल पढ़ें",
         "googleReadonlyHint": "Yuvomi Google Calendar से इवेंट पढ़ता है लेकिन कोई भी वापस नहीं लिखता।",
+        "googleReconsentHint": "नई Google अनुमतियाँ आवश्यक हैं। कार्य, Drive और जन्मदिन सिंक सक्षम करने के लिए एक बार फिर से कनेक्ट करें — इस बीच कैलेंडर सिंक काम करता रहता है।",
+        "googleReconnect": "Google फिर से कनेक्ट करें",
         "calendarSwitched": "कैलेंडर बदला गया – सिंक हो रहा है…",
         "appleCalendar": "Apple कैलेंडर (iCloud)",
         "syncNow": "अभी सिंक करें",

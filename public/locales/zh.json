@@ -1084,6 +1084,8 @@
         "googleCalendarPrimary": "主日历",
         "googleReadonly": "只读",
         "googleReadonlyHint": "Yuvomi 从 Google 日历读取事件，但不写回任何事件。",
+        "googleReconsentHint": "需要新的 Google 权限。请重新连接一次以启用任务、Drive 和生日同步——在此期间日历同步会继续工作。",
+        "googleReconnect": "重新连接 Google",
         "calendarSwitched": "已切换日历 – 正在同步…",
         "appleCalendar": "Apple 日历（iCloud）",
         "syncNow": "立即同步",

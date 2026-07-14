@@ -1084,6 +1084,8 @@
         "googleCalendarPrimary": "Primär",
         "googleReadonly": "Skrivskyddad",
         "googleReadonlyHint": "Yuvomi läser händelser från Google Kalender men skriver inte tillbaka några.",
+        "googleReconsentHint": "Nya Google-behörigheter krävs. Återanslut en gång för att aktivera synkronisering av Uppgifter, Drive och födelsedagar — kalendersynkroniseringen fortsätter att fungera under tiden.",
+        "googleReconnect": "Återanslut Google",
         "calendarSwitched": "Kalender bytt – synkroniserar…",
         "appleCalendar": "Apple Calendar (iCloud)",
         "syncNow": "Synkronisera nu",

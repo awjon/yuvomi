@@ -1084,6 +1084,8 @@
         "googleCalendarPrimary": "Birincil",
         "googleReadonly": "Salt okunur",
         "googleReadonlyHint": "Yuvomi, Google Takvim'den etkinlikleri okur ancak hiçbirini geri yazmaz.",
+        "googleReconsentHint": "Yeni Google izinleri gerekiyor. Görevler, Drive ve doğum günü senkronizasyonunu etkinleştirmek için bir kez yeniden bağlanın — takvim senkronizasyonu bu sırada çalışmaya devam eder.",
+        "googleReconnect": "Google'ı yeniden bağla",
         "calendarSwitched": "Takvim değiştirildi – senkronize ediliyor…",
         "appleCalendar": "Apple Takvim (iCloud)",
         "syncNow": "Şimdi senkronize et",

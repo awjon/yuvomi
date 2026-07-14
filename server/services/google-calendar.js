@@ -1,26 +1,27 @@
 /**
  * Modul: Google Calendar Sync
- * Zweck: OAuth 2.0 + bidirektionaler Sync mit Google Calendar API v3
- * Abhängigkeiten: googleapis, server/db.js
+ * Zweck: Bidirektionaler Sync mit Google Calendar API v3.
+ *        Die OAuth-Schicht (Client, Tokens, Scopes) liegt geteilt in
+ *        server/services/google-auth.js.
+ * Abhängigkeiten: googleapis, server/db.js, server/services/google-auth.js
  *
- * sync_config-Schlüssel:
- *   google_access_token   - OAuth Access Token
- *   google_refresh_token  - OAuth Refresh Token (langlebig)
- *   google_token_expiry   - ISO-8601-Timestamp bis wann Access Token gültig ist
- *   google_sync_token     - Inkrementeller Sync-Token von Google (events.list)
+ * sync_config-Schlüssel (calendar-spezifisch):
  *   google_last_sync      - ISO-8601-Timestamp des letzten erfolgreichen Syncs
- *   google_calendar_id    - ID des zu synchronisierenden Kalenders (Default: 'primary')
+ *   google_readonly       - '1' wenn Outbound-Sync deaktiviert ist
  */
 
 import { createLogger } from '../logger.js';
 const log = createLogger('Google');
 
 import { google } from 'googleapis';
-import crypto from 'node:crypto';
 import * as db from '../db.js';
 import { decodeHtmlEntities } from '../utils/html-entities.js';
 import { nearestColorId } from '../utils/ical-color.js';
 import { assignDefaultToEvent } from './sync-assignment.js';
+import {
+  cfgGet, cfgSet, cfgDel, createClient, loadAuthorizedClient,
+  getAuthUrl, handleCallback, getAuthStatus, disconnectAuth, hasScope, SCOPES,
+} from './google-auth.js';
 
 const GOOGLE_COLOR = '#4285F4';
 
@@ -39,42 +40,8 @@ function upsertExternalCalendar(source, externalId, name, color) {
 }
 
 // --------------------------------------------------------
-// OAuth2-Client (lazy initialisiert)
+// Read-only-Modus (calendar-spezifisch)
 // --------------------------------------------------------
-
-function createClient() {
-  const clientId     = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri  = process.env.GOOGLE_REDIRECT_URI;
-
-  if (!clientId || !clientSecret || !redirectUri) {
-    throw new Error('[Google] GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI must be set.');
-  }
-
-  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-}
-
-// --------------------------------------------------------
-// sync_config Helfer
-// --------------------------------------------------------
-
-function cfgGet(key) {
-  const row = db.get().prepare('SELECT value FROM sync_config WHERE key = ?').get(key);
-  return row ? row.value : null;
-}
-
-function cfgSet(key, value) {
-  db.get().prepare(`
-    INSERT INTO sync_config (key, value)
-    VALUES (?, ?)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value,
-                                   updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-  `).run(key, value);
-}
-
-function cfgDel(key) {
-  db.get().prepare('DELETE FROM sync_config WHERE key = ?').run(key);
-}
 
 function isReadonly() {
   return cfgGet('google_readonly') === '1';
@@ -203,101 +170,35 @@ async function listCalendars() {
 }
 
 // --------------------------------------------------------
-// Client mit gespeicherten Tokens laden
-// --------------------------------------------------------
-
-function loadAuthorizedClient() {
-  const accessToken  = cfgGet('google_access_token');
-  const refreshToken = cfgGet('google_refresh_token');
-
-  if (!accessToken || !refreshToken) {
-    throw new Error('[Google] Not configured - complete OAuth first.');
-  }
-
-  const client = createClient();
-  client.setCredentials({
-    access_token:  accessToken,
-    refresh_token: refreshToken,
-    expiry_date:   cfgGet('google_token_expiry') ? parseInt(cfgGet('google_token_expiry'), 10) : undefined,
-  });
-
-  // Token-Refresh automatisch speichern
-  client.on('tokens', (tokens) => {
-    if (tokens.access_token) cfgSet('google_access_token', tokens.access_token);
-    if (tokens.expiry_date)  cfgSet('google_token_expiry', String(tokens.expiry_date));
-  });
-
-  return client;
-}
-
-// --------------------------------------------------------
 // Öffentliche API
 // --------------------------------------------------------
 
 /**
- * Generiert die Google OAuth2-URL zum Weiterleiten des Admins.
- * @returns {string} Auth-URL
- */
-/**
- * Generiert die Google OAuth2-URL zum Weiterleiten des Admins.
- * Enthalt einen CSRF-sicheren state-Parameter.
- * @param {object} session - Express-Session-Objekt (state wird dort gespeichert)
- * @returns {string} Auth-URL
- */
-function getAuthUrl(session) {
-  const client = createClient();
-  const state = crypto.randomBytes(32).toString('hex');
-  if (session) session.googleOAuthState = state;
-  return client.generateAuthUrl({
-    access_type: 'offline',
-    prompt:      'consent',
-    scope:       ['https://www.googleapis.com/auth/calendar'],
-    state,
-  });
-}
-
-/**
- * OAuth-Callback: tauscht Code gegen Tokens, speichert in sync_config.
- * @param {string} code - Code aus dem OAuth-Callback-Query-Parameter
- */
-async function handleCallback(code) {
-  const client = createClient();
-  const { tokens } = await client.getToken(code);
-
-  if (!tokens.refresh_token) {
-    throw new Error('[Google] No refresh token received. Revoke access in your Google account and connect again.');
-  }
-
-  cfgSet('google_access_token',  tokens.access_token);
-  cfgSet('google_refresh_token', tokens.refresh_token);
-  if (tokens.expiry_date) cfgSet('google_token_expiry', String(tokens.expiry_date));
-
-  log.info('OAuth successful - tokens saved.');
-}
-
-/**
  * Verbindungsstatus zurückgeben.
- * @returns {{ configured: boolean, connected: boolean, lastSync: string|null }}
+ * `needsReconsent` ist true, wenn verbunden, aber nicht alle Suite-Scopes
+ * gewährt sind (z. B. Alt-Installation mit reinem Calendar-Token) — die
+ * Settings-UI blendet dann einen "Erneut verbinden"-Hinweis ein.
  */
 function getStatus() {
-  const configured = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REDIRECT_URI);
-  const connected  = !!(cfgGet('google_access_token') && cfgGet('google_refresh_token'));
-  const lastSync   = cfgGet('google_last_sync');
+  const auth = getAuthStatus();
   return {
-    configured,
-    connected,
-    lastSync,
-    selectedCount: enabledCalendarIds().length,
-    readonly: isReadonly(),
+    configured: auth.configured,
+    connected:  auth.connected,
+    lastSync:   cfgGet('google_last_sync'),
+    selectedCount:  enabledCalendarIds().length,
+    readonly:       isReadonly(),
+    grantedScopes:  auth.grantedScopes,
+    needsReconsent: auth.connected && auth.missingScopes.length > 0,
   };
 }
 
 /**
  * Tokens und Sync-State löschen (Verbindung trennen).
+ * Löscht die geteilten OAuth-Tokens plus den calendar-spezifischen State.
  */
 function disconnect() {
-  ['google_access_token', 'google_refresh_token', 'google_token_expiry',
-   'google_last_sync', 'google_readonly'].forEach(cfgDel);
+  disconnectAuth();
+  ['google_last_sync', 'google_readonly'].forEach(cfgDel);
   db.get().prepare('DELETE FROM google_calendar_selection').run();
   log.info('Disconnected.');
 }
@@ -308,6 +209,13 @@ function disconnect() {
  * Outbound: lokale Termine (external_source='local', external_calendar_id IS NULL) → Google
  */
 async function sync() {
+  // Defensiv: ohne Calendar-Scope gar nicht erst versuchen (Alt-Token, das noch
+  // nicht neu freigegeben wurde). Sollte im Normalfall immer gewährt sein.
+  if (!hasScope(SCOPES.CALENDAR)) {
+    log.warn('Calendar scope not granted - reconnect required, sync skipped.');
+    return;
+  }
+
   const client   = loadAuthorizedClient();
   const calendar = google.calendar({ version: 'v3', auth: client });
 
@@ -606,7 +514,10 @@ function localEventToGoogle(event, colorMap = {}) {
   return gEvent;
 }
 
-export { getAuthUrl, handleCallback, getStatus, disconnect, sync, listCalendars,
+// getAuthUrl/handleCallback werden aus der geteilten Auth-Schicht re-exportiert,
+// damit server/routes/calendar.js unverändert bleibt.
+export { getAuthUrl, handleCallback };
+export { getStatus, disconnect, sync, listCalendars,
          listSelection, setCalendarEnabled, setReadonly };
 export const __test = {
   localEventToGoogle, googleAllDayEndToInclusive, localAllDayEndToExclusive,

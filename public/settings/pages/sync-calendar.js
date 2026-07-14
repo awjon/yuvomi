@@ -851,6 +851,25 @@ function buildGoogleProvider(googleStatus, user) {
     return section;
   }
 
+  // Alt-Installationen mit reinem Calendar-Token: einmalig erneut verbinden,
+  // damit Tasks/Drive/Birthdays-Scopes gewährt werden.
+  if (googleStatus.connected && googleStatus.needsReconsent) {
+    const notice = document.createElement('div');
+    notice.className = 'settings-notice settings-notice--warning';
+    const noticeText = document.createElement('p');
+    noticeText.className = 'form-hint';
+    noticeText.textContent = t('settings.googleReconsentHint');
+    notice.appendChild(noticeText);
+    if (user?.role === 'admin') {
+      const reconnect = document.createElement('a');
+      reconnect.href = '/api/v1/calendar/google/auth';
+      reconnect.className = 'btn btn--primary';
+      reconnect.textContent = t('settings.googleReconnect');
+      notice.appendChild(reconnect);
+    }
+    section.appendChild(notice);
+  }
+
   if (googleStatus.connected && user?.role === 'admin') {
     section.appendChild(buildGoogleCalendarPicker());
     section.appendChild(buildGoogleReadonlyToggle(googleStatus));

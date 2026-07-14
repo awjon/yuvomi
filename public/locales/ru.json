@@ -1084,6 +1084,8 @@
         "googleCalendarPrimary": "Основной",
         "googleReadonly": "Только чтение",
         "googleReadonlyHint": "Yuvomi читает события из Google Календаря, но не записывает их обратно.",
+        "googleReconsentHint": "Требуются новые разрешения Google. Подключитесь повторно один раз, чтобы включить синхронизацию задач, Диска и дней рождения — синхронизация календаря тем временем продолжает работать.",
+        "googleReconnect": "Переподключить Google",
         "calendarSwitched": "Календарь изменён – синхронизация…",
         "appleCalendar": "Apple Calendar (iCloud)",
         "syncNow": "Синхронизировать сейчас",
