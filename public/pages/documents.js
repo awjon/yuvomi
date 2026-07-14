@@ -592,6 +592,9 @@ function storageBadgeHtml(doc) {
   if (backend === 'dms') {
     return `<span class="doc-badge doc-badge--dms">${t('documents.storageDms')}</span>`;
   }
+  if (backend === 'gdrive') {
+    return `<span class="doc-badge doc-badge--gdrive">${t('documents.storageGdrive')}</span>`;
+  }
   // Folder-backed local documents carry a storage_key; they are a non-default
   // target and earn a badge. The in-DB BLOB default (no key) stays badge-less so
   // a badge remains a meaningful signal.
@@ -1129,9 +1132,11 @@ function openDocumentViewer(doc) {
   const downloadUrl = `/api/v1/documents/${doc.id}/download`;
   // Defense-in-Depth: nur http(s)-Deep-Links rendern, niemals javascript:/data:-Schemata
   // (zusätzlich zur serverseitigen base_url-Validierung bei der DMS-Account-Anlage).
-  const externalUrl = documentStorageBackend(doc) === 'dms' && /^https?:\/\//i.test(doc.external_url || '')
+  const backend = documentStorageBackend(doc);
+  const externalUrl = (backend === 'dms' || backend === 'gdrive') && /^https?:\/\//i.test(doc.external_url || '')
     ? doc.external_url
     : '';
+  const externalLinkLabel = backend === 'gdrive' ? t('documents.gdriveOpenExternal') : t('documents.dmsOpenExternal');
 
   openSharedModal({
     title: esc(doc.name),
@@ -1146,7 +1151,7 @@ function openDocumentViewer(doc) {
             ${externalUrl ? `
             <a class="btn btn--ghost btn--sm doc-viewer__dms-link" href="${esc(externalUrl)}" target="_blank" rel="noopener noreferrer">
               <i data-lucide="external-link" class="icon-md" aria-hidden="true"></i>
-              ${t('documents.dmsOpenExternal')}
+              ${externalLinkLabel}
             </a>` : ''}
             <a class="btn btn--primary btn--icon btn--icon-sm" href="${downloadUrl}" download
                title="${t('documents.downloadAction')}" aria-label="${t('documents.downloadAction')}">

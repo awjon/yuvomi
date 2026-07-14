@@ -3205,6 +3205,162 @@ const MIGRATIONS = [
         ON google_tasklist_selection(enabled);
     `,
   },
+  {
+    version: 87,
+    description: 'Google Drive: folder selection + gdrive document storage backend',
+    // family_documents.storage_backend trägt einen Spalten-CHECK, der 'gdrive'
+    // nicht kennt. SQLite kann CHECKs nicht per ALTER ändern → Tabellen-Neuaufbau
+    // (Muster wie Migration 52). Die Elterntabelle wird von mehreren Kindtabellen
+    // referenziert: CASCADE-Kinder werden beim DROP geleert, SET-NULL-Spalten
+    // genullt (Foreign Keys sind während der Migration aktiv). Beides wird vorher
+    // in TEMP-Tabellen gesichert und danach wiederhergestellt.
+    up(db) {
+      db.exec(`
+        -- 1) CASCADE-Kinder sichern
+        CREATE TEMP TABLE _m87_access AS SELECT * FROM family_document_access;
+        CREATE TEMP TABLE _m87_expatt AS SELECT * FROM expense_attachments;
+
+        -- 2) SET-NULL-Referenzen sichern (id → Dokument-FK)
+        CREATE TEMP TABLE _m87_cal AS
+          SELECT id, attachment_document_id FROM calendar_events WHERE attachment_document_id IS NOT NULL;
+        CREATE TEMP TABLE _m87_hks AS
+          SELECT id, receipt_document_id FROM housekeeping_work_sessions WHERE receipt_document_id IS NOT NULL;
+        CREATE TEMP TABLE _m87_grp AS
+          SELECT id, avatar_document_id FROM expense_groups WHERE avatar_document_id IS NOT NULL;
+        CREATE TEMP TABLE _m87_set AS
+          SELECT id, proof_document_id FROM settlements WHERE proof_document_id IS NOT NULL;
+
+        -- 3) Elterntabelle mit erweitertem storage_backend-CHECK neu aufbauen
+        CREATE TABLE family_documents_new (
+          id               INTEGER PRIMARY KEY AUTOINCREMENT,
+          name             TEXT    NOT NULL,
+          description      TEXT,
+          category         TEXT    NOT NULL DEFAULT 'other'
+                                    CHECK(category IN ('medical', 'school', 'identity', 'insurance', 'finance', 'home', 'vehicle', 'legal', 'travel', 'pets', 'warranty', 'taxes', 'work', 'other')),
+          status           TEXT    NOT NULL DEFAULT 'active'
+                                    CHECK(status IN ('active', 'archived')),
+          visibility       TEXT    NOT NULL DEFAULT 'family'
+                                    CHECK(visibility IN ('family', 'restricted', 'private')),
+          original_name    TEXT    NOT NULL,
+          mime_type        TEXT    NOT NULL,
+          file_size        INTEGER NOT NULL,
+          content_data     TEXT    NOT NULL,
+          storage_provider TEXT    NOT NULL DEFAULT 'local'
+                                    CHECK(storage_provider IN ('local', 'external')),
+          storage_key      TEXT,
+          created_by       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          updated_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          folder_id        INTEGER REFERENCES family_document_folders(id) ON DELETE SET NULL,
+          dms_account_id   INTEGER REFERENCES dms_accounts(id) ON DELETE SET NULL,
+          external_url     TEXT,
+          external_meta    TEXT,
+          storage_backend  TEXT    NOT NULL DEFAULT 'local'
+                                    CHECK(storage_backend IN ('local', 'webdav', 'dms', 'gdrive'))
+        );
+
+        INSERT INTO family_documents_new
+          (id, name, description, category, status, visibility, original_name, mime_type,
+           file_size, content_data, storage_provider, storage_key, created_by, created_at,
+           updated_at, folder_id, dms_account_id, external_url, external_meta, storage_backend)
+        SELECT
+           id, name, description, category, status, visibility, original_name, mime_type,
+           file_size, content_data, storage_provider, storage_key, created_by, created_at,
+           updated_at, folder_id, dms_account_id, external_url, external_meta, storage_backend
+        FROM family_documents;
+
+        DROP TABLE family_documents;
+        ALTER TABLE family_documents_new RENAME TO family_documents;
+
+        -- Indizes wiederherstellen
+        CREATE INDEX idx_family_documents_status     ON family_documents(status);
+        CREATE INDEX idx_family_documents_category   ON family_documents(category);
+        CREATE INDEX idx_family_documents_created_by ON family_documents(created_by);
+        CREATE INDEX idx_family_documents_folder     ON family_documents(folder_id);
+        CREATE INDEX idx_family_documents_dms        ON family_documents(dms_account_id);
+        -- Eindeutigkeit importierter Drive-Dateien je storage_key.
+        CREATE UNIQUE INDEX idx_family_documents_gdrive_key
+          ON family_documents(storage_key) WHERE storage_backend = 'gdrive';
+
+        -- updated_at-Trigger wiederherstellen
+        CREATE TRIGGER trg_family_documents_updated_at
+          AFTER UPDATE ON family_documents FOR EACH ROW
+          BEGIN UPDATE family_documents SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = OLD.id; END;
+
+        -- Konsistenz-Trigger mit erlaubter gdrive-Kombination neu anlegen
+        CREATE TRIGGER trg_family_documents_storage_insert
+          BEFORE INSERT ON family_documents
+          FOR EACH ROW
+          BEGIN
+            SELECT CASE
+              WHEN NOT (
+                (NEW.storage_provider = 'local'    AND NEW.storage_backend = 'local')
+                OR (NEW.storage_provider = 'external' AND NEW.storage_backend = 'webdav')
+                OR (NEW.storage_provider = 'external' AND NEW.storage_backend = 'dms')
+                OR (NEW.storage_provider = 'external' AND NEW.storage_backend = 'gdrive')
+              )
+              THEN RAISE(ABORT, 'invalid document storage provider/backend combination')
+            END;
+            SELECT CASE
+              WHEN NEW.storage_backend != 'dms' AND NEW.dms_account_id IS NOT NULL
+              THEN RAISE(ABORT, 'dms_account_id requires dms storage backend')
+            END;
+          END;
+
+        CREATE TRIGGER trg_family_documents_storage_update
+          BEFORE UPDATE OF storage_provider, storage_backend, dms_account_id ON family_documents
+          FOR EACH ROW
+          BEGIN
+            SELECT CASE
+              WHEN NOT (
+                (NEW.storage_provider = 'local'    AND NEW.storage_backend = 'local')
+                OR (NEW.storage_provider = 'external' AND NEW.storage_backend = 'webdav')
+                OR (NEW.storage_provider = 'external' AND NEW.storage_backend = 'dms')
+                OR (NEW.storage_provider = 'external' AND NEW.storage_backend = 'gdrive')
+              )
+              THEN RAISE(ABORT, 'invalid document storage provider/backend combination')
+            END;
+            SELECT CASE
+              WHEN NEW.storage_backend != 'dms' AND NEW.dms_account_id IS NOT NULL
+              THEN RAISE(ABORT, 'dms_account_id requires dms storage backend')
+            END;
+          END;
+
+        -- 4) CASCADE-Kinder wiederherstellen (Elternzeilen behalten dieselben ids)
+        INSERT INTO family_document_access SELECT * FROM _m87_access;
+        INSERT INTO expense_attachments    SELECT * FROM _m87_expatt;
+
+        -- 5) SET-NULL-Referenzen wiederherstellen
+        UPDATE calendar_events SET attachment_document_id =
+          (SELECT attachment_document_id FROM _m87_cal WHERE _m87_cal.id = calendar_events.id)
+          WHERE id IN (SELECT id FROM _m87_cal);
+        UPDATE housekeeping_work_sessions SET receipt_document_id =
+          (SELECT receipt_document_id FROM _m87_hks WHERE _m87_hks.id = housekeeping_work_sessions.id)
+          WHERE id IN (SELECT id FROM _m87_hks);
+        UPDATE expense_groups SET avatar_document_id =
+          (SELECT avatar_document_id FROM _m87_grp WHERE _m87_grp.id = expense_groups.id)
+          WHERE id IN (SELECT id FROM _m87_grp);
+        UPDATE settlements SET proof_document_id =
+          (SELECT proof_document_id FROM _m87_set WHERE _m87_set.id = settlements.id)
+          WHERE id IN (SELECT id FROM _m87_set);
+
+        DROP TABLE _m87_access;
+        DROP TABLE _m87_expatt;
+        DROP TABLE _m87_cal;
+        DROP TABLE _m87_hks;
+        DROP TABLE _m87_grp;
+        DROP TABLE _m87_set;
+
+        -- 6) Ordnerauswahl für Google Drive
+        CREATE TABLE google_drive_folder_selection (
+          folder_id  TEXT PRIMARY KEY,
+          name       TEXT,
+          enabled    INTEGER NOT NULL DEFAULT 0,
+          last_sync  TEXT
+        );
+      `);
+    },
+  },
 ];
 
 /**

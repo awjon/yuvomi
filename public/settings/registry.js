@@ -203,6 +203,16 @@ export const SETTINGS_LEAVES = freezeEntries([
     loader: () => import('/settings/pages/documents-dms.js'),
   },
   {
+    id: 'documents-gdrive',
+    domainId: 'documents',
+    path: '/settings/documents/gdrive',
+    labelKey: 'settings.pageDocumentGdrive',
+    descriptionKey: 'settings.pageDocumentGdriveDescription',
+    icon: 'cloud',
+    adminOnly: true,
+    loader: () => import('/settings/pages/documents-gdrive.js'),
+  },
+  {
     id: 'admin-family',
     domainId: 'admin',
     path: '/settings/admin/family',

@@ -1068,6 +1068,15 @@ function buildPaths() {
         },
       }),
     },
+    '/api/v1/documents/gdrive/status': { get: op({ summary: 'Google Drive connection status', tag: 'Documents' }) },
+    '/api/v1/documents/gdrive/folders': {
+      get: op({ summary: 'Browse Google Drive folders', tag: 'Documents', admin: true }),
+      patch: op({ summary: 'Enable/disable a Google Drive folder', tag: 'Documents', admin: true, stateChanging: true, requestBody: jsonBody(null) }),
+    },
+    '/api/v1/documents/gdrive/config': {
+      put: op({ summary: 'Configure Google Drive upload backend', tag: 'Documents', admin: true, stateChanging: true, requestBody: jsonBody(null) }),
+    },
+    '/api/v1/documents/gdrive/sync': { post: op({ summary: 'Trigger Google Drive sync', tag: 'Documents', admin: true, stateChanging: true }) },
     '/api/v1/documents/folders': {
       get: op({ summary: 'List document folders', tag: 'Documents' }),
       post: op({ summary: 'Create document folder', tag: 'Documents', stateChanging: true, requestBody: jsonBody(null) }),
