@@ -3361,6 +3361,18 @@ const MIGRATIONS = [
       `);
     },
   },
+  {
+    version: 88,
+    description: 'Birthdays imported from Google Calendar: external_source + google_event_id',
+    up: `
+      -- Herkunft eines Geburtstags: 'local' (manuell) oder 'google' (importiert,
+      -- schreibgeschützt außer Erinnerungseinstellungen).
+      ALTER TABLE birthdays ADD COLUMN external_source TEXT NOT NULL DEFAULT 'local';
+      ALTER TABLE birthdays ADD COLUMN google_event_id TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_birthdays_google_event
+        ON birthdays(google_event_id) WHERE google_event_id IS NOT NULL;
+    `,
+  },
 ];
 
 /**

@@ -18,6 +18,7 @@ import { buildOpenApiSpec } from './openapi.js';
 import * as googleCalendar from './services/google-calendar.js';
 import * as googleTasks from './services/google-tasks.js';
 import * as googleDrive from './services/google-drive.js';
+import * as googleBirthdays from './services/google-birthdays.js';
 import * as appleCalendar from './services/apple-calendar.js';
 import * as icsSubscription from './services/ics-subscription.js';
 import * as icsExport from './services/ics-export.js';
@@ -475,6 +476,8 @@ async function runSync() {
     googleTasks.sync().catch((e) => logSync.error('Google Tasks error:', e.message));
     // Guard (Verbindung + Drive-Scope + aktivierte Ordner) liegt in sync() selbst.
     googleDrive.sync().catch((e) => logSync.error('Google Drive error:', e.message));
+    // Guard (Import aktiviert + Calendar-Scope) liegt in sync() selbst.
+    googleBirthdays.sync().catch((e) => logSync.error('Google Birthdays error:', e.message));
   }
 
   const { configured: appleConfigured } = appleCalendar.getStatus();

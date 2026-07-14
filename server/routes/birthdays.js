@@ -1,8 +1,10 @@
 import express from 'express';
 import { createLogger } from '../logger.js';
 import * as db from '../db.js';
+import { requireAdmin } from '../auth.js';
 import { collectErrors, date as validateDate, str, MAX_SHORT, MAX_TEXT, MAX_TITLE } from '../middleware/validate.js';
 import { deleteBirthdayArtifacts, hydrateBirthday, syncBirthdayArtifacts, syncAllBirthdayReminders } from '../services/birthdays.js';
+import * as googleBirthdays from '../services/google-birthdays.js';
 
 const log = createLogger('Birthdays');
 const router = express.Router();
@@ -28,6 +30,46 @@ function sortHydrated(rows) {
     .map((row) => hydrateBirthday(row))
     .sort((a, b) => a.days_until - b.days_until || a.name.localeCompare(b.name));
 }
+
+// --------------------------------------------------------
+// Google-Geburtstags-Import (literale Routen VOR /:id registrieren)
+// --------------------------------------------------------
+
+// GET /api/v1/birthdays/google/status
+router.get('/google/status', async (_req, res) => {
+  try {
+    res.json(await googleBirthdays.getStatus());
+  } catch (err) {
+    log.error('GET /google/status error:', err);
+    res.status(500).json({ error: 'Internal error.', code: 500 });
+  }
+});
+
+// PUT /api/v1/birthdays/google/source — Quelle aktivieren/deaktivieren + Sync (Admin)
+router.put('/google/source', requireAdmin, async (req, res) => {
+  try {
+    const result = googleBirthdays.setSource({
+      calendarId: req.body.calendar_id ?? null,
+      enabled: !!req.body.enabled,
+    });
+    if (req.body.enabled) await googleBirthdays.sync();
+    res.json({ ...(await googleBirthdays.getStatus()), warning: result.warning });
+  } catch (err) {
+    log.error('PUT /google/source error:', err);
+    res.status(500).json({ error: err.message || 'Internal error.', code: 500 });
+  }
+});
+
+// POST /api/v1/birthdays/google/sync — manuellen Sync auslösen (Admin)
+router.post('/google/sync', requireAdmin, async (_req, res) => {
+  try {
+    await googleBirthdays.sync();
+    res.json(await googleBirthdays.getStatus());
+  } catch (err) {
+    log.error('POST /google/sync error:', err);
+    res.status(500).json({ error: err.message || 'Internal error.', code: 500 });
+  }
+});
 
 router.get('/', (req, res) => {
   try {
@@ -104,6 +146,30 @@ router.put('/:id', (req, res) => {
     const existing = loadBirthday(id);
     if (!existing) return res.status(404).json({ error: 'Birthday not found.', code: 404 });
 
+    // Importierte Google-Geburtstage sind schreibgeschützt — nur die
+    // Erinnerungseinstellungen dürfen geändert werden.
+    if (existing.external_source === 'google') {
+      const REMINDER_FIELDS = new Set(['reminder_offset', 'reminder_custom_amount', 'reminder_custom_unit']);
+      const touchesOther = Object.keys(req.body).some((k) => !REMINDER_FIELDS.has(k));
+      if (touchesOther) {
+        return res.status(403).json({ error: 'Imported birthdays are read-only except reminders.', code: 403 });
+      }
+      db.get().prepare(`
+        UPDATE birthdays
+        SET reminder_offset = ?, reminder_custom_amount = ?, reminder_custom_unit = ?,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+        WHERE id = ?
+      `).run(
+        req.body.reminder_offset !== undefined ? req.body.reminder_offset : existing.reminder_offset,
+        req.body.reminder_custom_amount !== undefined ? req.body.reminder_custom_amount : existing.reminder_custom_amount,
+        req.body.reminder_custom_unit !== undefined ? req.body.reminder_custom_unit : existing.reminder_custom_unit,
+        id,
+      );
+      const updatedGoogle = loadBirthday(id);
+      db.transaction(() => syncBirthdayArtifacts(db.get(), updatedGoogle));
+      return res.json({ data: hydrateBirthday(loadBirthday(id)) });
+    }
+
     const checks = [];
     if (req.body.name !== undefined) checks.push(str(req.body.name, 'Name', { max: MAX_TITLE, required: false }));
     if (req.body.birth_date !== undefined) checks.push(validateDate(req.body.birth_date, 'Birth date'));
@@ -151,6 +217,12 @@ router.delete('/:id', (req, res) => {
     const id = parseInt(req.params.id, 10);
     const existing = loadBirthday(id);
     if (!existing) return res.status(404).json({ error: 'Birthday not found.', code: 404 });
+
+    // Importierte Google-Geburtstage werden über die Quelle (Google-Kontakt löschen
+    // oder Import deaktivieren) entfernt, nicht einzeln in der App.
+    if (existing.external_source === 'google') {
+      return res.status(403).json({ error: 'Imported birthdays cannot be deleted here.', code: 403 });
+    }
 
     db.transaction(() => {
       deleteBirthdayArtifacts(db.get(), existing);

@@ -899,6 +899,11 @@ function buildPaths() {
     '/api/v1/birthdays/upcoming': {
       get: op({ summary: 'List upcoming birthdays', tag: 'Birthdays' }),
     },
+    '/api/v1/birthdays/google/status': { get: op({ summary: 'Google birthday import status', tag: 'Birthdays' }) },
+    '/api/v1/birthdays/google/source': {
+      put: op({ summary: 'Configure the Google birthday source calendar', tag: 'Birthdays', admin: true, stateChanging: true, requestBody: jsonBody(null) }),
+    },
+    '/api/v1/birthdays/google/sync': { post: op({ summary: 'Trigger Google birthday import', tag: 'Birthdays', admin: true, stateChanging: true }) },
     '/api/v1/birthdays/meta/options': {
       get: op({ summary: 'Get birthday upload options', tag: 'Birthdays' }),
     },
