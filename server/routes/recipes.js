@@ -9,6 +9,7 @@ import express from 'express';
 import * as db from '../db.js';
 import { str, num, collectErrors, MAX_TITLE, MAX_TEXT, MAX_SHORT } from '../middleware/validate.js';
 import { normalizeRecipeMealTypes } from '../../public/utils/recipe-meal-types.js';
+import { importFromUrl, searchTheMealDb, RecipeNotFoundError } from '../services/recipe-import.js';
 
 const log = createLogger('Recipes');
 const router = express.Router();
@@ -66,6 +67,41 @@ router.get('/', (_req, res) => {
   } catch (err) {
     log.error('GET / error:', err);
     res.status(500).json({ error: 'Internal error', code: 500 });
+  }
+});
+
+// --------------------------------------------------------
+// Import/Suche (literale Routen VOR /:id registrieren).
+// Beide liefern nur einen Entwurf; gespeichert wird über POST /.
+// --------------------------------------------------------
+
+// POST /api/v1/recipes/import-url — Rezept aus einer URL extrahieren
+router.post('/import-url', async (req, res) => {
+  try {
+    const url = String(req.body?.url || '').trim();
+    if (!url) return res.status(400).json({ error: 'url required.', code: 400, reason: 'missing_url' });
+    const draft = await importFromUrl(url);
+    res.json({ draft });
+  } catch (err) {
+    if (err instanceof RecipeNotFoundError) {
+      return res.status(400).json({ error: 'No recipe found on the page.', code: 400, reason: 'no_recipe' });
+    }
+    // SSRF-/Netzwerk-/URL-Fehler bleiben ein 400 (benutzerkontrollierte Eingabe).
+    log.warn('POST /import-url failed:', err.message);
+    res.status(400).json({ error: 'The URL could not be imported.', code: 400, reason: 'fetch_failed' });
+  }
+});
+
+// GET /api/v1/recipes/search-external?q= — TheMealDB-Suche
+router.get('/search-external', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) return res.json({ results: [] });
+    const results = await searchTheMealDb(q);
+    res.json({ results });
+  } catch (err) {
+    log.warn('GET /search-external failed:', err.message);
+    res.status(502).json({ error: 'The recipe search is unavailable.', code: 502 });
   }
 });
 
