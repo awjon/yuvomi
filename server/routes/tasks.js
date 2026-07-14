@@ -7,10 +7,12 @@
 import { createLogger } from '../logger.js';
 import express from 'express';
 import * as db from '../db.js';
+import { requireAdmin } from '../auth.js';
 import { nextOccurrenceAfter } from '../services/recurrence.js';
 import { syncTaskRewards } from '../services/rewards.js';
 import { normalizeVisibility, visibilityWhere } from '../services/visibility.js';
 import { uniqueKey } from '../utils/category-slug.js';
+import * as googleTasks from '../services/google-tasks.js';
 import * as v from '../middleware/validate.js';
 
 const log = createLogger('Tasks');
@@ -234,6 +236,55 @@ router.delete('/categories/:key', (req, res) => {
 });
 
 // --------------------------------------------------------
+// Google Tasks Integration (literale Routen VOR /:id registrieren)
+// --------------------------------------------------------
+
+// GET /api/v1/tasks/google/status — Verbindungs-/Scope-Status
+router.get('/google/status', (_req, res) => {
+  try {
+    res.json(googleTasks.getStatus());
+  } catch (err) {
+    log.error('GET /google/status error:', err);
+    res.status(500).json({ error: 'Internal server error.', code: 500 });
+  }
+});
+
+// GET /api/v1/tasks/google/tasklists — verfügbare Google-Task-Listen (Admin)
+router.get('/google/tasklists', requireAdmin, async (_req, res) => {
+  try {
+    res.json({ data: await googleTasks.listTasklists() });
+  } catch (err) {
+    log.error('GET /google/tasklists error:', err);
+    res.status(500).json({ error: err.message || 'Internal server error.', code: 500 });
+  }
+});
+
+// PATCH /api/v1/tasks/google/tasklists — Liste aktivieren/deaktivieren + Sync (Admin)
+router.patch('/google/tasklists', requireAdmin, async (req, res) => {
+  try {
+    const { tasklistId, enabled, name } = req.body;
+    if (!tasklistId) return res.status(400).json({ error: 'tasklistId required.', code: 400 });
+    googleTasks.setTasklistEnabled(tasklistId, !!enabled, { name });
+    await googleTasks.sync();
+    res.json(googleTasks.getStatus());
+  } catch (err) {
+    log.error('PATCH /google/tasklists error:', err);
+    res.status(500).json({ error: err.message || 'Internal server error.', code: 500 });
+  }
+});
+
+// POST /api/v1/tasks/google/sync — manuellen Sync auslösen (Admin)
+router.post('/google/sync', requireAdmin, async (_req, res) => {
+  try {
+    await googleTasks.sync();
+    res.json(googleTasks.getStatus());
+  } catch (err) {
+    log.error('POST /google/sync error:', err);
+    res.status(500).json({ error: err.message || 'Internal server error.', code: 500 });
+  }
+});
+
+// --------------------------------------------------------
 // GET /api/v1/tasks
 // Listet Top-Level-Aufgaben mit optionalen Filtern.
 // Query-Parameter: status, priority, assigned_to, category
@@ -346,6 +397,16 @@ router.post('/', (req, res) => {
     const points = clampPoints(req.body.points);
     const visibility = normalizeVisibility(req.body.visibility);
 
+    // Optionaler Google-Tasks-Export: nur gegen eine aktivierte Liste zulassen.
+    let targetTasklist = null;
+    if (req.body.target_google_tasklist_id) {
+      const enabled = db.get().prepare(
+        'SELECT 1 FROM google_tasklist_selection WHERE tasklist_id = ? AND enabled = 1'
+      ).get(req.body.target_google_tasklist_id);
+      if (!enabled) return res.status(400).json({ error: 'Unknown or disabled Google task list.', code: 400 });
+      targetTasklist = req.body.target_google_tasklist_id;
+    }
+
     const userIds  = parseAssignedTo(req.body.assigned_to);
     const firstUid = userIds[0] ?? null;
 
@@ -362,12 +423,13 @@ router.post('/', (req, res) => {
       const result = db.get().prepare(`
         INSERT INTO tasks
           (title, description, category, priority, start_date, due_date, due_time,
-           assigned_to, created_by, parent_task_id, is_recurring, recurrence_rule, points, visibility)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           assigned_to, created_by, parent_task_id, is_recurring, recurrence_rule, points, visibility,
+           target_google_tasklist_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         title.trim(), description, category, priority,
         start_date, due_date, due_time, firstUid, req.authUserId || req.session.userId, parent_task_id,
-        is_recurring ? 1 : 0, recurrence_rule, points, visibility
+        is_recurring ? 1 : 0, recurrence_rule, points, visibility, targetTasklist
       );
       setAssignments(db.get(), result.lastInsertRowid, userIds);
       return result.lastInsertRowid;
@@ -441,6 +503,12 @@ router.put('/:id', (req, res) => {
       syncTaskRewards(db.get(), task.id, task.status, status, req.authUserId || req.session.userId);
     })();
 
+    // Änderung einer importierten Google-Aufgabe zurückspielen (nur round-trip-fähige Felder).
+    if (task.external_source === 'google') {
+      googleTasks.markDirty(task.id);
+      googleTasks.pushTaskUpdate(task.id).catch((e) => log.warn('Google pushback failed:', e.message));
+    }
+
     const updated = db.get().prepare(`
       SELECT t.*, u.display_name AS assigned_name, u.avatar_color AS assigned_color,
         u.avatar_data AS assigned_avatar, ${ASSIGNED_USERS_SQL}
@@ -469,11 +537,17 @@ router.patch('/:id/status', (req, res) => {
     if (!VALID_STATUSES.includes(status))
       return res.status(400).json({ error: `Invalid status. Allowed: ${VALID_STATUSES.join(', ')}`, code: 400 });
 
-    const prev = db.get().prepare('SELECT status FROM tasks WHERE id = ?').get(req.params.id);
+    const prev = db.get().prepare('SELECT status, external_source FROM tasks WHERE id = ?').get(req.params.id);
     if (!prev)
       return res.status(404).json({ error: 'Task not found.', code: 404 });
 
     db.get().prepare('UPDATE tasks SET status = ? WHERE id = ?').run(status, req.params.id);
+
+    // Statuswechsel einer importierten Google-Aufgabe zurückspielen.
+    if (prev.external_source === 'google') {
+      googleTasks.markDirty(Number(req.params.id));
+      googleTasks.pushTaskUpdate(Number(req.params.id)).catch((e) => log.warn('Google pushback failed:', e.message));
+    }
 
     syncHousekeepingPaymentStatus(db.get(), req.params.id, status);
     // Punkte-Gutschrift/Storno an den Aufgaben-Statuswechsel koppeln.
@@ -522,9 +596,20 @@ router.patch('/:id/status', (req, res) => {
 // --------------------------------------------------------
 router.delete('/:id', (req, res) => {
   try {
+    // Google-Verknüpfung vor dem Löschen sichern, um die Löschung zurückzuspielen.
+    const link = db.get().prepare(
+      `SELECT external_source, google_tasklist_id, external_uid FROM tasks WHERE id = ?`
+    ).get(req.params.id);
+
     const result = db.get().prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
     if (result.changes === 0)
       return res.status(404).json({ error: 'Task not found.', code: 404 });
+
+    if (link?.external_source === 'google') {
+      googleTasks.pushTaskDeletion(link.google_tasklist_id, link.external_uid)
+        .catch((e) => log.warn('Google deletion pushback failed:', e.message));
+    }
+
     res.json({ ok: true });
   } catch (err) {
     log.error('DELETE /:id error:', err);

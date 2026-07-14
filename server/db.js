@@ -3171,6 +3171,40 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    version: 86,
+    description: 'Google Tasks two-way sync: tasklist selection + Google linkage on tasks',
+    up: `
+      -- Google-Task-Verknüpfung. Wiederverwendet die vorhandenen external_source/
+      -- external_uid-Spalten (Migration 45): external_source='google', external_uid=Google-Task-ID.
+      -- Ergänzt nur die Google-spezifischen Zusatzfelder.
+      ALTER TABLE tasks ADD COLUMN google_tasklist_id        TEXT;
+      -- Analog zu calendar_events.target_google_calendar_id: lokale Aufgabe für den
+      -- Outbound-Export in diese Google-Liste markieren.
+      ALTER TABLE tasks ADD COLUMN target_google_tasklist_id TEXT;
+      -- Letzter 'updated'-Timestamp der Remote-Aufgabe (RFC3339), Konflikt-Heuristik.
+      ALTER TABLE tasks ADD COLUMN google_updated            TEXT;
+      -- 1 = lokale Änderung, die noch zu Google gepusht werden muss.
+      ALTER TABLE tasks ADD COLUMN google_dirty              INTEGER NOT NULL DEFAULT 0;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_google_task
+        ON tasks(google_tasklist_id, external_uid)
+        WHERE external_source = 'google';
+
+      -- Auswahl der zu synchronisierenden Google-Task-Listen (spiegelt
+      -- google_calendar_selection). Die Tasks-API kennt keine Sync-Tokens; als
+      -- inkrementeller Cursor dient updated_min (Zeitpunkt des letzten Syncs).
+      CREATE TABLE IF NOT EXISTS google_tasklist_selection (
+        tasklist_id  TEXT PRIMARY KEY,
+        name         TEXT,
+        enabled      INTEGER NOT NULL DEFAULT 0,
+        updated_min  TEXT,
+        last_sync    TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_google_tasklist_selection_enabled
+        ON google_tasklist_selection(enabled);
+    `,
+  },
 ];
 
 /**

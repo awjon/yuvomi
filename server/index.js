@@ -16,6 +16,7 @@ import { router as authRouter, sessionMiddleware, requireAuth, requireAdmin } fr
 import { csrfMiddleware } from './middleware/csrf.js';
 import { buildOpenApiSpec } from './openapi.js';
 import * as googleCalendar from './services/google-calendar.js';
+import * as googleTasks from './services/google-tasks.js';
 import * as appleCalendar from './services/apple-calendar.js';
 import * as icsSubscription from './services/ics-subscription.js';
 import * as icsExport from './services/ics-export.js';
@@ -469,6 +470,8 @@ async function runSync() {
   const { connected: googleConnected } = googleCalendar.getStatus();
   if (googleConnected) {
     googleCalendar.sync().catch((e) => logSync.error('Google error:', e.message));
+    // Guard (Verbindung + Tasks-Scope + aktivierte Listen) liegt in sync() selbst.
+    googleTasks.sync().catch((e) => logSync.error('Google Tasks error:', e.message));
   }
 
   const { configured: appleConfigured } = appleCalendar.getStatus();

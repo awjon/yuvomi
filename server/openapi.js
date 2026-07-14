@@ -577,6 +577,12 @@ function buildPaths() {
       post: op({ summary: 'Create task', tag: 'Tasks', stateChanging: true, requestBody: jsonBody(null) }),
     },
     '/api/v1/tasks/meta/options': { get: op({ summary: 'Get task metadata', tag: 'Tasks' }) },
+    '/api/v1/tasks/google/status': { get: op({ summary: 'Google Tasks connection status', tag: 'Tasks' }) },
+    '/api/v1/tasks/google/tasklists': {
+      get: op({ summary: 'List Google task lists', tag: 'Tasks', admin: true }),
+      patch: op({ summary: 'Enable/disable a Google task list', tag: 'Tasks', admin: true, stateChanging: true, requestBody: jsonBody(null) }),
+    },
+    '/api/v1/tasks/google/sync': { post: op({ summary: 'Trigger Google Tasks sync', tag: 'Tasks', admin: true, stateChanging: true }) },
     '/api/v1/tasks/categories': {
       get: op({ summary: 'List task categories', tag: 'Tasks' }),
       post: op({ summary: 'Create task category', tag: 'Tasks', stateChanging: true, requestBody: jsonBody(null) }),

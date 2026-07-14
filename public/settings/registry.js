@@ -153,6 +153,16 @@ export const SETTINGS_LEAVES = freezeEntries([
     loader: () => import('/settings/pages/sync-calendar.js'),
   },
   {
+    id: 'sync-tasks',
+    domainId: 'sync',
+    path: '/settings/sync/tasks',
+    labelKey: 'settings.pageSyncTasks',
+    descriptionKey: 'settings.pageSyncTasksDescription',
+    icon: 'list-todo',
+    adminOnly: true,
+    loader: () => import('/settings/pages/sync-tasks.js'),
+  },
+  {
     id: 'sync-contacts',
     domainId: 'sync',
     path: '/settings/sync/contacts',
