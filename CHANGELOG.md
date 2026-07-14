@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Google suite integration** on a shared OAuth layer (one consent flow for Calendar, Tasks and Drive):
+  - **Google Tasks** two-way sync — selected task lists appear alongside local tasks (badged), completing/editing a synced task pushes back to Google, and new tasks can optionally be added to a chosen Google list (Settings → Synchronization → Tasks).
+  - **Google Drive** documents — sync chosen Drive folders into the Documents module and optionally store new uploads in Drive; large or native Google files fall back to an "Open in Google Drive" link (Settings → Documents → Google Drive).
+  - **Birthday import** — pull birthdays from Google's contacts birthday calendar (or any chosen calendar) into the Birthdays module; imported entries are read-only apart from their reminder, and manual birthdays keep working (Settings → Synchronization → Calendar → Birthdays).
+- **Recipe import** — add a recipe by pasting a URL (server-side schema.org/Recipe extraction, no API key) or by searching TheMealDB, both prefilling the recipe form for review before saving.
+
+### Changed
+- Google connections now request the Calendar, Tasks and Drive scopes together. Installs connected before this change keep syncing the calendar and show a one-time "reconnect" prompt to enable the new integrations.
+
 ## [1.20.1] - 2026-07-13
 
 ### Fixed
