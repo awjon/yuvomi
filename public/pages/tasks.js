@@ -225,6 +225,7 @@ function renderTaskCard(task, opts = {}) {
             ${renderDueDate(task.due_date, task.due_time)}
             ${task.is_recurring ? `<span class="due-date" aria-label="${t('tasks.recurring')}"><i data-lucide="repeat" class="icon-sm" aria-hidden="true"></i></span>` : ''}
             ${renderVisibilityBadge(task.visibility)}
+            ${task.external_source === 'google' ? `<span class="due-date task-card__google" title="${t('tasks.googleBadge')}" aria-label="${t('tasks.googleBadge')}"><i data-lucide="check-check" class="icon-sm" aria-hidden="true"></i></span>` : ''}
             ${task.category !== FALLBACK_CATEGORY ? `<span class="due-date task-card__category">${esc(catLabel(task.category))}</span>` : ''}
           </div>
         </div>
@@ -451,6 +452,15 @@ function renderModalContent({ task = null, users = [], reminder = null } = {}) {
 
       ${renderReminderSection(task, reminder)}
 
+      ${!isEdit ? `
+      <div class="form-group" id="task-google-tasklist-group" hidden>
+        <label class="label" for="task-google-tasklist">${t('tasks.googleExportLabel')}</label>
+        <select class="input" id="task-google-tasklist" name="target_google_tasklist_id">
+          <option value="">${t('tasks.googleExportNone')}</option>
+        </select>
+        <p class="task-field-hint">${t('tasks.googleExportHint')}</p>
+      </div>` : ''}
+
       <div id="task-form-error" class="login-error" hidden></div>
 
       <div class="modal-panel__footer" style="padding:0;border:none;margin-top:var(--space-6)">
@@ -622,6 +632,10 @@ function openTaskModal({ task = null, users = [], reminder = null } = {}, contai
         if (!customFields) return;
         customFields.style.display = offset.value === 'offset_custom' ? '' : 'none';
       });
+      // Optionaler Google-Tasks-Export nur bei neuen Aufgaben: aktivierte Listen
+      // aus dem (günstigen) Status-Endpoint nachladen, ohne Google-Roundtrip.
+      if (!isEdit) populateGoogleTasklistSelect(panel);
+
       // Form-Events
       panel.querySelector('#task-form')
         ?.addEventListener('submit', (e) => handleFormSubmit(e, container));
@@ -630,6 +644,24 @@ function openTaskModal({ task = null, users = [], reminder = null } = {}, contai
         ?.addEventListener('click', (e) => handleDeleteTask(e.currentTarget.dataset.id, container));
     },
   });
+}
+
+// Google-Tasks-Zielauswahl im Modal befüllen (nur wenn verbunden + Listen aktiv).
+async function populateGoogleTasklistSelect(panel) {
+  const group = panel.querySelector('#task-google-tasklist-group');
+  const select = panel.querySelector('#task-google-tasklist');
+  if (!group || !select) return;
+  try {
+    const status = await api.get('/tasks/google/status');
+    if (!status?.connected || !status.scopeGranted || !(status.enabledLists?.length)) return;
+    for (const list of status.enabledLists) {
+      const opt = document.createElement('option');
+      opt.value = list.id;
+      opt.textContent = list.name || list.id;
+      select.appendChild(opt);
+    }
+    group.hidden = false;
+  } catch { /* Google Tasks nicht verfügbar - Feld bleibt verborgen */ }
 }
 
 // --------------------------------------------------------
@@ -755,6 +787,8 @@ async function handleFormSubmit(e, container) {
       await api.put(`/tasks/${taskId}`, body);
       window.yuvomi.showToast(t('tasks.savedToast'), 'success');
     } else {
+      const targetList = form.querySelector('#task-google-tasklist')?.value || '';
+      if (targetList) body.target_google_tasklist_id = targetList;
       const res = await api.post('/tasks', body);
       savedTaskId = res.data?.id;
       window.yuvomi.showToast(t('tasks.createdToast'), 'success');

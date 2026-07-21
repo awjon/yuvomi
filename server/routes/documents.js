@@ -370,6 +370,77 @@ router.post('/storage/test', async (req, res) => {
   }
 });
 
+// --------------------------------------------------------
+// Google Drive Integration (literale Routen VOR /:id registrieren).
+// google-drive.js wird lazy importiert, damit googleapis eine optionale
+// Abhängigkeit außerhalb der Google-Services bleibt.
+// --------------------------------------------------------
+
+router.get('/gdrive/status', async (_req, res) => {
+  try {
+    const gdrive = await import('../services/google-drive.js');
+    res.json(gdrive.getStatus());
+  } catch (err) {
+    log.error('GET /gdrive/status error:', err);
+    res.status(500).json({ error: 'Internal server error.', code: 500 });
+  }
+});
+
+router.get('/gdrive/folders', async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Not authorized.', code: 403 });
+    const gdrive = await import('../services/google-drive.js');
+    const parent = typeof req.query.parent === 'string' && req.query.parent ? req.query.parent : 'root';
+    res.json({ data: await gdrive.listFolders(parent) });
+  } catch (err) {
+    log.error('GET /gdrive/folders error:', err);
+    res.status(500).json({ error: err.message || 'Internal server error.', code: 500 });
+  }
+});
+
+router.patch('/gdrive/folders', async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Not authorized.', code: 403 });
+    const { folderId, enabled, name } = req.body;
+    if (!folderId) return res.status(400).json({ error: 'folderId required.', code: 400 });
+    const gdrive = await import('../services/google-drive.js');
+    gdrive.setFolderEnabled(folderId, !!enabled, { name });
+    await gdrive.sync();
+    res.json(gdrive.getStatus());
+  } catch (err) {
+    log.error('PATCH /gdrive/folders error:', err);
+    res.status(500).json({ error: err.message || 'Internal server error.', code: 500 });
+  }
+});
+
+router.put('/gdrive/config', async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Not authorized.', code: 403 });
+    const gdrive = await import('../services/google-drive.js');
+    gdrive.setUploadConfig({
+      enabled: !!req.body.enabled,
+      folderId: req.body.folder_id ?? null,
+      folderName: req.body.folder_name ?? null,
+    });
+    res.json(gdrive.getStatus());
+  } catch (err) {
+    log.error('PUT /gdrive/config error:', err);
+    res.status(500).json({ error: err.message || 'Internal server error.', code: 500 });
+  }
+});
+
+router.post('/gdrive/sync', async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Not authorized.', code: 403 });
+    const gdrive = await import('../services/google-drive.js');
+    await gdrive.sync();
+    res.json(gdrive.getStatus());
+  } catch (err) {
+    log.error('POST /gdrive/sync error:', err);
+    res.status(500).json({ error: err.message || 'Internal server error.', code: 500 });
+  }
+});
+
 router.get('/meta/options', (req, res) => {
   try {
     const dmsAccounts = db.get().prepare('SELECT id, name, provider FROM dms_accounts ORDER BY name COLLATE NOCASE').all();
@@ -519,8 +590,8 @@ router.post('/', async (req, res) => {
         INSERT INTO family_documents (
           name, description, category, visibility, folder_id, original_name,
           mime_type, file_size, content_data, storage_provider, storage_backend,
-          storage_key, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          storage_key, external_url, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         vName.value,
         vDescription.value,
@@ -534,6 +605,7 @@ router.post('/', async (req, res) => {
         stagedUpload.storage_provider,
         stagedUpload.storage_backend,
         stagedUpload.storage_key,
+        stagedUpload.external_url ?? null,
         userId(req)
       );
       if (visibility === 'restricted') replaceAccess(result.lastInsertRowid, allowedIds);
@@ -550,7 +622,8 @@ router.post('/', async (req, res) => {
       return sendStorageError(res, err, 'Document storage upload failed.');
     }
     log.error('POST / error:', err);
-    if (stagedUpload?.storage_backend === 'webdav') {
+    // Verwaiste Remote-Dateien nach einem DB-Fehler aufräumen (WebDAV + Drive).
+    if (stagedUpload?.storage_backend === 'webdav' || stagedUpload?.storage_backend === 'gdrive') {
       try {
         await cleanupStagedUpload(stagedUpload);
       } catch (cleanupError) {
@@ -665,6 +738,11 @@ router.get('/:id/preview', async (req, res) => {
     if (err instanceof DmsDocumentUnavailableError) {
       return res.status(404).json({ error: 'Linked DMS account is gone.', code: 404 });
     }
+    // Drive-Datei zu groß / natives Format: nicht durchreichbar → external_url anbieten.
+    if (err?.storageCode === 'DOCUMENT_STORAGE_EXTERNAL_ONLY') {
+      const doc = getVisibleDocument(Number(req.params.id), req, true);
+      return res.status(409).json({ error: 'Preview only available in Google Drive.', code: 409, external_url: doc?.external_url || null });
+    }
     log.error('GET /:id/preview error:', err);
     if (sendStorageError(res, err, 'Document storage read failed.')) return;
     res.status(500).json({ error: 'Internal server error.', code: 500 });
@@ -687,6 +765,14 @@ router.get('/:id/download', async (req, res) => {
   } catch (err) {
     if (err instanceof DmsDocumentUnavailableError) {
       return res.status(404).json({ error: 'Linked DMS account is gone.', code: 404 });
+    }
+    // Drive-Datei zu groß / natives Format: auf die Drive-Ansicht umleiten.
+    if (err?.storageCode === 'DOCUMENT_STORAGE_EXTERNAL_ONLY') {
+      const doc = getVisibleDocument(Number(req.params.id), req, true);
+      if (doc?.external_url && /^https?:\/\//i.test(doc.external_url)) {
+        return res.redirect(302, doc.external_url);
+      }
+      return res.status(409).json({ error: 'Document only available in Google Drive.', code: 409 });
     }
     log.error('GET /:id/download error:', err);
     if (sendStorageError(res, err, 'Document storage read failed.')) return;

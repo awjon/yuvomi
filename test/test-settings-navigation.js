@@ -96,7 +96,7 @@ function getTranslation(locale, key) {
 }
 
 test('settings leaves have unique IDs and paths', () => {
-  assert.equal(SETTINGS_LEAVES.length, 24);
+  assert.equal(SETTINGS_LEAVES.length, 26);
   assert.equal(new Set(SETTINGS_LEAVES.map((leaf) => leaf.id)).size, SETTINGS_LEAVES.length);
   assert.equal(new Set(SETTINGS_LEAVES.map((leaf) => leaf.path)).size, SETTINGS_LEAVES.length);
 });

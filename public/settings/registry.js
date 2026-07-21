@@ -153,6 +153,16 @@ export const SETTINGS_LEAVES = freezeEntries([
     loader: () => import('/settings/pages/sync-calendar.js'),
   },
   {
+    id: 'sync-tasks',
+    domainId: 'sync',
+    path: '/settings/sync/tasks',
+    labelKey: 'settings.pageSyncTasks',
+    descriptionKey: 'settings.pageSyncTasksDescription',
+    icon: 'list-todo',
+    adminOnly: true,
+    loader: () => import('/settings/pages/sync-tasks.js'),
+  },
+  {
     id: 'sync-contacts',
     domainId: 'sync',
     path: '/settings/sync/contacts',
@@ -191,6 +201,16 @@ export const SETTINGS_LEAVES = freezeEntries([
     icon: 'archive',
     adminOnly: true,
     loader: () => import('/settings/pages/documents-dms.js'),
+  },
+  {
+    id: 'documents-gdrive',
+    domainId: 'documents',
+    path: '/settings/documents/gdrive',
+    labelKey: 'settings.pageDocumentGdrive',
+    descriptionKey: 'settings.pageDocumentGdriveDescription',
+    icon: 'cloud',
+    adminOnly: true,
+    loader: () => import('/settings/pages/documents-gdrive.js'),
   },
   {
     id: 'admin-family',

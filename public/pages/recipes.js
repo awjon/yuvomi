@@ -269,6 +269,20 @@ function openRecipeModal(mode, recipe = null) {
     title: isEdit ? t('recipes.editRecipe') : t('recipes.addRecipe'),
     size: 'md',
     content: `
+      ${!isEdit ? `
+      <div class="form-group recipe-import">
+        <label class="form-label">${t('recipes.importTitle')}</label>
+        <div class="recipe-import__url">
+          <input id="recipe-import-url" class="form-input" type="url" placeholder="${t('recipes.importUrlPlaceholder')}">
+          <button class="btn btn--secondary" type="button" id="recipe-import-btn">${t('recipes.importButton')}</button>
+        </div>
+        <div class="recipe-import__search">
+          <input id="recipe-search-query" class="form-input" type="text" placeholder="${t('recipes.searchPlaceholder')}">
+          <button class="btn btn--secondary" type="button" id="recipe-search-btn">${t('recipes.searchButton')}</button>
+        </div>
+        <div class="recipe-import__results" id="recipe-search-results"></div>
+        <p class="form-hint">${t('recipes.importHint')}</p>
+      </div>` : ''}
       <div class="form-group">
         <label class="form-label" for="recipe-title">${t('recipes.titleLabel')}</label>
         <input id="recipe-title" class="form-input" type="text" placeholder="${t('recipes.titlePlaceholder')}">
@@ -334,6 +348,8 @@ function openRecipeModal(mode, recipe = null) {
         btn.closest('.ingredient-row')?.remove();
       });
 
+      if (!isEdit) wireRecipeImport(panel);
+
       panel.querySelector('#recipe-cancel')?.addEventListener('click', closeModal);
       panel.querySelector('#recipe-save')?.addEventListener('click', () => saveRecipe(panel, mode, recipe));
 
@@ -344,6 +360,88 @@ function openRecipeModal(mode, recipe = null) {
 
 function closeModal({ force = false } = {}) {
   closeSharedModal({ force });
+}
+
+// Entwurf (aus URL-Import oder Suche) ins Modal übernehmen.
+function applyDraft(panel, draft) {
+  if (!draft) return;
+  if (draft.title) panel.querySelector('#recipe-title').value = draft.title;
+  if (draft.notes != null) panel.querySelector('#recipe-notes').value = draft.notes;
+  if (draft.recipe_url) panel.querySelector('#recipe-url').value = draft.recipe_url;
+  const ingList = panel.querySelector('#recipe-ingredient-list');
+  ingList.replaceChildren();
+  for (const ing of draft.ingredients || []) {
+    ingList.insertAdjacentHTML('beforeend', ingredientRowHTML({
+      name: ing.name,
+      quantity: ing.quantity ?? '',
+      category: ing.category ?? DEFAULT_CATEGORY_NAME,
+      categories: mealCategories(),
+    }));
+  }
+  if (window.lucide) window.lucide.createIcons({ el: panel });
+}
+
+// URL-Import + TheMealDB-Suche verdrahten (nur im Erstell-Modal).
+function wireRecipeImport(panel) {
+  const importBtn = panel.querySelector('#recipe-import-btn');
+  const searchBtn = panel.querySelector('#recipe-search-btn');
+  const results = panel.querySelector('#recipe-search-results');
+
+  importBtn?.addEventListener('click', async () => {
+    const url = panel.querySelector('#recipe-import-url')?.value.trim();
+    if (!url) return;
+    importBtn.disabled = true;
+    importBtn.textContent = t('recipes.importing');
+    try {
+      const res = await api.post('/recipes/import-url', { url });
+      applyDraft(panel, res.draft);
+      window.yuvomi?.showToast(t('recipes.importSuccess'), 'success');
+    } catch (err) {
+      window.yuvomi?.showToast(err.data?.error ?? t('recipes.importFailed'), 'error');
+    } finally {
+      importBtn.disabled = false;
+      importBtn.textContent = t('recipes.importButton');
+    }
+  });
+
+  searchBtn?.addEventListener('click', async () => {
+    const q = panel.querySelector('#recipe-search-query')?.value.trim();
+    if (!q) return;
+    searchBtn.disabled = true;
+    results.replaceChildren();
+    results.insertAdjacentHTML('beforeend', `<p class="form-hint">${t('common.loading')}</p>`);
+    try {
+      const res = await api.get(`/recipes/search-external?q=${encodeURIComponent(q)}`);
+      results.replaceChildren();
+      const list = res.results || [];
+      if (list.length === 0) {
+        results.insertAdjacentHTML('beforeend', `<p class="form-hint">${t('recipes.searchEmpty')}</p>`);
+        return;
+      }
+      for (const draft of list) {
+        const item = document.createElement('div');
+        item.className = 'recipe-search-result';
+        const label = document.createElement('span');
+        label.className = 'recipe-search-result__title';
+        label.textContent = draft.title;
+        const useBtn = document.createElement('button');
+        useBtn.type = 'button';
+        useBtn.className = 'btn btn--secondary btn--sm';
+        useBtn.textContent = t('recipes.searchUse');
+        useBtn.addEventListener('click', () => {
+          applyDraft(panel, draft);
+          window.yuvomi?.showToast(t('recipes.importSuccess'), 'success');
+        });
+        item.append(label, useBtn);
+        results.appendChild(item);
+      }
+    } catch (err) {
+      results.replaceChildren();
+      results.insertAdjacentHTML('beforeend', `<p class="form-error">${err.data?.error ?? t('common.errorGeneric')}</p>`);
+    } finally {
+      searchBtn.disabled = false;
+    }
+  });
 }
 
 async function saveRecipe(panel, mode, recipe) {

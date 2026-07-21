@@ -172,7 +172,7 @@ Open your browser and navigate to **http://localhost:8090**. The wizard detects 
 
 - Basics — timezone (`TZ`) and HTTP host port (`OIKOS_HTTP_PORT`)
 - Security key generation (`SESSION_SECRET`, `DB_ENCRYPTION_KEY`)
-- Optional integrations (weather, Google Calendar, Apple CalDAV, local folder or WebDAV document storage)
+- Optional integrations (weather, Google suite — Calendar, Tasks, Drive, birthday import, Apple CalDAV, local folder or WebDAV document storage)
 - Advanced settings — reverse-proxy/HTTPS (`SESSION_SECURE`, `TRUST_PROXY`), Single Sign-On (OIDC), and automatic backups
 - Writing your `.env` file (an existing `.env` is backed up to `.env.bak-<timestamp>` first)
 - Starting the container (via Docker or Podman, whichever was detected)
@@ -558,13 +558,34 @@ The weather widget defaults to **Open-Meteo** — free, ECMWF-backed, and requir
 | `OPENWEATHER_UNITS` | Unit system (`metric` or `imperial`) | `metric` | No |
 | `OPENWEATHER_LANG` | Language for weather descriptions | `de` | No |
 
-### Google Calendar Sync (Optional)
+### Google Suite — Calendar, Tasks, Drive, Birthdays (Optional)
+
+A single OAuth client covers all Google integrations. One consent flow requests
+the **Calendar**, **Tasks** and **Drive** scopes together, so the same connection
+powers calendar sync, two-way Google Tasks sync, Google Drive document sync/upload,
+and birthday import.
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `GOOGLE_CLIENT_ID` | OAuth 2.0 Client ID from Google Cloud Console | - | No |
 | `GOOGLE_CLIENT_SECRET` | OAuth 2.0 Client Secret | - | No |
-| `GOOGLE_REDIRECT_URI` | OAuth callback URL | `https://<YOUR-DOMAIN>/api/v1/calendar/google/callback` | No |
+| `GOOGLE_REDIRECT_URI` | OAuth callback URL (shared entry point for the whole suite) | `https://<YOUR-DOMAIN>/api/v1/calendar/google/callback` | No |
+
+**Notes:**
+- **Existing installs must reconnect once.** Connections made before Tasks/Drive
+  existed hold a calendar-only token; Settings → Synchronization → Calendar shows a
+  "reconnect" prompt that re-grants all scopes. Calendar sync keeps working meanwhile.
+- **Drive scope.** The Drive integration uses the full `drive` scope because listing
+  an arbitrary user-picked folder and uploading into it needs read+write across
+  existing files. This is fine for a self-hosted app with a user-owned OAuth client;
+  a *published* app would require Google's security assessment.
+- **Where to configure:** Tasks (Settings → Synchronization → Tasks), Drive
+  (Settings → Documents → Google Drive), Birthdays (Settings → Synchronization →
+  Calendar → Birthdays). All sync on the `SYNC_INTERVAL_MINUTES` schedule.
+- **New sync_config keys** (managed automatically): `google_scopes`,
+  `google_tasklist_selection` / `google_tasks_last_sync`,
+  `google_drive_folder_selection` / `document_storage_gdrive_*` /
+  `google_drive_last_sync`, `google_birthdays_enabled` / `_calendar_id` / `_last_sync`.
 
 ### Apple Calendar Sync — Legacy Single-Account (Optional)
 

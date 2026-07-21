@@ -577,6 +577,12 @@ function buildPaths() {
       post: op({ summary: 'Create task', tag: 'Tasks', stateChanging: true, requestBody: jsonBody(null) }),
     },
     '/api/v1/tasks/meta/options': { get: op({ summary: 'Get task metadata', tag: 'Tasks' }) },
+    '/api/v1/tasks/google/status': { get: op({ summary: 'Google Tasks connection status', tag: 'Tasks' }) },
+    '/api/v1/tasks/google/tasklists': {
+      get: op({ summary: 'List Google task lists', tag: 'Tasks', admin: true }),
+      patch: op({ summary: 'Enable/disable a Google task list', tag: 'Tasks', admin: true, stateChanging: true, requestBody: jsonBody(null) }),
+    },
+    '/api/v1/tasks/google/sync': { post: op({ summary: 'Trigger Google Tasks sync', tag: 'Tasks', admin: true, stateChanging: true }) },
     '/api/v1/tasks/categories': {
       get: op({ summary: 'List task categories', tag: 'Tasks' }),
       post: op({ summary: 'Create task category', tag: 'Tasks', stateChanging: true, requestBody: jsonBody(null) }),
@@ -682,6 +688,12 @@ function buildPaths() {
     '/api/v1/recipes': {
       get: op({ summary: 'List recipes', tag: 'Recipes' }),
       post: op({ summary: 'Create recipe', tag: 'Recipes', stateChanging: true, requestBody: jsonBody(null) }),
+    },
+    '/api/v1/recipes/import-url': {
+      post: op({ summary: 'Import a recipe draft from a URL', tag: 'Recipes', stateChanging: true, requestBody: jsonBody(null) }),
+    },
+    '/api/v1/recipes/search-external': {
+      get: op({ summary: 'Search external recipe database (TheMealDB)', tag: 'Recipes' }),
     },
     '/api/v1/recipes/{id}': {
       put: op({ summary: 'Update recipe', tag: 'Recipes', params: [idParam()], stateChanging: true, requestBody: jsonBody(null) }),
@@ -887,6 +899,11 @@ function buildPaths() {
     '/api/v1/birthdays/upcoming': {
       get: op({ summary: 'List upcoming birthdays', tag: 'Birthdays' }),
     },
+    '/api/v1/birthdays/google/status': { get: op({ summary: 'Google birthday import status', tag: 'Birthdays' }) },
+    '/api/v1/birthdays/google/source': {
+      put: op({ summary: 'Configure the Google birthday source calendar', tag: 'Birthdays', admin: true, stateChanging: true, requestBody: jsonBody(null) }),
+    },
+    '/api/v1/birthdays/google/sync': { post: op({ summary: 'Trigger Google birthday import', tag: 'Birthdays', admin: true, stateChanging: true }) },
     '/api/v1/birthdays/meta/options': {
       get: op({ summary: 'Get birthday upload options', tag: 'Birthdays' }),
     },
@@ -1062,6 +1079,15 @@ function buildPaths() {
         },
       }),
     },
+    '/api/v1/documents/gdrive/status': { get: op({ summary: 'Google Drive connection status', tag: 'Documents' }) },
+    '/api/v1/documents/gdrive/folders': {
+      get: op({ summary: 'Browse Google Drive folders', tag: 'Documents', admin: true }),
+      patch: op({ summary: 'Enable/disable a Google Drive folder', tag: 'Documents', admin: true, stateChanging: true, requestBody: jsonBody(null) }),
+    },
+    '/api/v1/documents/gdrive/config': {
+      put: op({ summary: 'Configure Google Drive upload backend', tag: 'Documents', admin: true, stateChanging: true, requestBody: jsonBody(null) }),
+    },
+    '/api/v1/documents/gdrive/sync': { post: op({ summary: 'Trigger Google Drive sync', tag: 'Documents', admin: true, stateChanging: true }) },
     '/api/v1/documents/folders': {
       get: op({ summary: 'List document folders', tag: 'Documents' }),
       post: op({ summary: 'Create document folder', tag: 'Documents', stateChanging: true, requestBody: jsonBody(null) }),

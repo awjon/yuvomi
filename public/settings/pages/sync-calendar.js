@@ -851,9 +851,29 @@ function buildGoogleProvider(googleStatus, user) {
     return section;
   }
 
+  // Alt-Installationen mit reinem Calendar-Token: einmalig erneut verbinden,
+  // damit Tasks/Drive/Birthdays-Scopes gewährt werden.
+  if (googleStatus.connected && googleStatus.needsReconsent) {
+    const notice = document.createElement('div');
+    notice.className = 'settings-notice settings-notice--warning';
+    const noticeText = document.createElement('p');
+    noticeText.className = 'form-hint';
+    noticeText.textContent = t('settings.googleReconsentHint');
+    notice.appendChild(noticeText);
+    if (user?.role === 'admin') {
+      const reconnect = document.createElement('a');
+      reconnect.href = '/api/v1/calendar/google/auth';
+      reconnect.className = 'btn btn--primary';
+      reconnect.textContent = t('settings.googleReconnect');
+      notice.appendChild(reconnect);
+    }
+    section.appendChild(notice);
+  }
+
   if (googleStatus.connected && user?.role === 'admin') {
     section.appendChild(buildGoogleCalendarPicker());
     section.appendChild(buildGoogleReadonlyToggle(googleStatus));
+    section.appendChild(buildGoogleBirthdaysSection());
   }
 
   const actions = document.createElement('div');
@@ -1032,6 +1052,121 @@ function buildGoogleReadonlyToggle(googleStatus) {
       showToast(err.message || t('common.errorGeneric'), 'danger');
     } finally {
       checkbox.disabled = false;
+    }
+  });
+
+  return group;
+}
+
+// Geburtstags-Import aus Google Calendar (umgekehrte Richtung). Lebt hier, weil
+// die Quelle kalenderbasiert ist und die Google-Karte bereits auf dieser Seite liegt.
+function buildGoogleBirthdaysSection() {
+  const group = document.createElement('div');
+  group.className = 'form-group settings-google-birthdays';
+
+  const label = document.createElement('label');
+  label.className = 'form-label';
+  label.textContent = t('settings.googleBirthdaysTitle');
+  group.appendChild(label);
+
+  const row = document.createElement('label');
+  row.className = 'toggle-row';
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  const toggleText = document.createElement('span');
+  toggleText.textContent = t('settings.googleBirthdaysEnable');
+  row.append(checkbox, toggleText);
+  group.appendChild(row);
+
+  const sourceWrap = document.createElement('div');
+  sourceWrap.className = 'form-group';
+  sourceWrap.hidden = true;
+  const sourceLabel = document.createElement('label');
+  sourceLabel.className = 'form-label';
+  sourceLabel.textContent = t('settings.googleBirthdaysSource');
+  const select = document.createElement('select');
+  select.className = 'form-input';
+  sourceWrap.append(sourceLabel, select);
+  group.appendChild(sourceWrap);
+
+  const hint = document.createElement('p');
+  hint.className = 'form-hint';
+  hint.textContent = t('settings.googleBirthdaysHint');
+  group.appendChild(hint);
+
+  const warn = document.createElement('p');
+  warn.className = 'form-hint field-hint--warn';
+  warn.hidden = true;
+  warn.textContent = t('settings.googleBirthdaysDupWarning');
+  group.appendChild(warn);
+
+  const syncBtn = document.createElement('button');
+  syncBtn.type = 'button';
+  syncBtn.className = 'btn btn--secondary';
+  syncBtn.textContent = t('settings.syncNow');
+  syncBtn.hidden = true;
+  group.appendChild(syncBtn);
+
+  async function populateSources(status) {
+    select.replaceChildren();
+    if (status.contactsCalendarAvailable) {
+      const opt = document.createElement('option');
+      opt.value = 'addressbook#contacts@group.v.calendar.google.com';
+      opt.textContent = t('settings.googleBirthdaysContacts');
+      select.appendChild(opt);
+    }
+    try {
+      const { data } = await api.get('/calendar/google/calendars');
+      for (const cal of data || []) {
+        const opt = document.createElement('option');
+        opt.value = cal.id;
+        opt.textContent = cal.summary || cal.id;
+        select.appendChild(opt);
+      }
+    } catch { /* Kalenderliste optional */ }
+    if (status.calendarId) select.value = status.calendarId;
+  }
+
+  (async () => {
+    let status;
+    try { status = await api.get('/birthdays/google/status'); }
+    catch { return; }
+    checkbox.checked = !!status.enabled;
+    sourceWrap.hidden = !status.enabled;
+    syncBtn.hidden = !status.enabled;
+    await populateSources(status);
+  })();
+
+  async function persist() {
+    try {
+      const res = await api.put('/birthdays/google/source', {
+        enabled: checkbox.checked,
+        calendar_id: select.value || null,
+      });
+      warn.hidden = res.warning !== 'calendar_also_synced';
+      showToast(t('settings.syncSuccess', { provider: 'Google' }), 'success');
+    } catch (err) {
+      showToast(err.message || t('common.errorGeneric'), 'danger');
+    }
+  }
+
+  checkbox.addEventListener('change', async () => {
+    sourceWrap.hidden = !checkbox.checked;
+    syncBtn.hidden = !checkbox.checked;
+    await persist();
+  });
+  select.addEventListener('change', persist);
+  syncBtn.addEventListener('click', async () => {
+    syncBtn.disabled = true;
+    syncBtn.textContent = t('settings.synchronizing');
+    try {
+      await api.post('/birthdays/google/sync', {});
+      showToast(t('settings.syncSuccess', { provider: 'Google' }), 'success');
+    } catch (err) {
+      showToast(err.message || t('common.errorGeneric'), 'danger');
+    } finally {
+      syncBtn.disabled = false;
+      syncBtn.textContent = t('settings.syncNow');
     }
   });
 

@@ -12,6 +12,9 @@ import express from 'express';
 import Database from 'better-sqlite3';
 
 process.env.DB_PATH = ':memory:';
+// tasksRouter zieht (über requireAdmin) auth.js, das ohne SESSION_SECRET beim
+// Import wirft — wie die übrigen Router-Tests eine Test-Konstante setzen.
+process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'test-secret';
 
 const { nextOccurrence, nextOccurrenceAfter } = await import('../server/services/recurrence.js');
 const { MIGRATIONS, _setTestDatabase } = await import('../server/db.js');

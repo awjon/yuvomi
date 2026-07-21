@@ -71,6 +71,11 @@ function renderBirthdayReminderSection(birthday = null) {
 // getrennt im Chip, damit keine Zahl doppelt erscheint.
 function ageMeta(birthday) {
   const date = formatDate(birthday.next_birthday);
+  // Importierte Google-Geburtstage tragen oft kein (plausibles) Geburtsjahr —
+  // dann nur das Datum ohne Altersangabe zeigen.
+  const birthYear = parseInt(String(birthday.birth_date).slice(0, 4), 10);
+  const implausible = !Number.isFinite(birthYear) || birthYear >= new Date().getFullYear();
+  if (implausible) return date;
   return `${date} · ${t('birthdays.turnsAge', { age: birthday.next_age })}`;
 }
 
@@ -134,13 +139,28 @@ function updateBirthdayBadge() {
 function birthdayItemHtml(birthday) {
   const chip = countdownChip(birthday);
   const isToday = chip.mod === 'today';
+  const isGoogle = birthday.external_source === 'google';
+  const googleBadge = isGoogle
+    ? `<span class="birthday-item__google" title="${t('birthdays.googleBadge')}" aria-label="${t('birthdays.googleBadge')}"><i data-lucide="calendar-check" style="width:14px;height:14px;" aria-hidden="true"></i></span>`
+    : '';
+  // Importierte Geburtstage sind schreibgeschützt: nur Erinnerung bearbeiten, kein Löschen.
+  const actions = isGoogle
+    ? `<button class="birthday-action-btn" type="button" data-action="edit" data-id="${birthday.id}" aria-label="${t('birthdays.editReminder')}" title="${t('birthdays.editReminder')}">
+         <i data-lucide="bell" style="width:18px;height:18px;" aria-hidden="true"></i>
+       </button>`
+    : `<button class="birthday-action-btn" type="button" data-action="edit" data-id="${birthday.id}" aria-label="${t('common.edit')}">
+         <i data-lucide="pencil" style="width:18px;height:18px;" aria-hidden="true"></i>
+       </button>
+       <button class="birthday-action-btn" type="button" data-action="delete" data-id="${birthday.id}" aria-label="${t('common.delete')}">
+         <i data-lucide="trash-2" style="width:18px;height:18px;" aria-hidden="true"></i>
+       </button>`;
   return `
     <article class="birthday-item ${isToday ? 'birthday-item--today' : ''}" data-id="${birthday.id}">
       <div class="birthday-item__media">${photoAvatar(birthday)}</div>
       <div class="birthday-item__body">
         <div class="birthday-item__row">
           <strong class="birthday-item__name">
-            ${esc(birthday.name)}${isToday ? CAKE_SVG : ''}
+            ${esc(birthday.name)}${googleBadge}${isToday ? CAKE_SVG : ''}
           </strong>
           <span class="birthday-chip birthday-chip--${chip.mod}">${esc(chip.label)}</span>
         </div>
@@ -148,12 +168,7 @@ function birthdayItemHtml(birthday) {
         ${birthday.notes ? `<div class="birthday-item__notes">${esc(birthday.notes)}</div>` : ''}
       </div>
       <div class="birthday-item__actions">
-        <button class="birthday-action-btn" type="button" data-action="edit" data-id="${birthday.id}" aria-label="${t('common.edit')}">
-          <i data-lucide="pencil" style="width:18px;height:18px;" aria-hidden="true"></i>
-        </button>
-        <button class="birthday-action-btn" type="button" data-action="delete" data-id="${birthday.id}" aria-label="${t('common.delete')}">
-          <i data-lucide="trash-2" style="width:18px;height:18px;" aria-hidden="true"></i>
-        </button>
+        ${actions}
       </div>
     </article>`;
 }
@@ -269,6 +284,8 @@ function birthdayPreviewHtml(name, photoData) {
 
 function openBirthdayModal({ mode, birthday = null }) {
   const isEdit = mode === 'edit';
+  // Importierte Google-Geburtstage: nur die Erinnerung ist editierbar.
+  const isGoogle = birthday?.external_source === 'google';
   let photoData = birthday?.photo_data || null;
   const today = toLocalDateKey(new Date());
 
@@ -282,7 +299,7 @@ function openBirthdayModal({ mode, birthday = null }) {
               ${birthdayPreviewHtml(birthday?.name || '', photoData)}
             </button>
             <input class="sr-only" id="bd-photo" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-            <div class="birthday-modal__photo-actions">
+            <div class="birthday-modal__photo-actions" ${isGoogle ? 'hidden' : ''}>
               <button type="button" class="birthday-modal__photo-action" id="bd-photo-edit" aria-label="${t('birthdays.photoLabel')}" title="${t('birthdays.photoLabel')}">
                 <i data-lucide="pencil" aria-hidden="true"></i>
               </button>
@@ -294,12 +311,13 @@ function openBirthdayModal({ mode, birthday = null }) {
           <div class="birthday-modal__fields">
             <div class="form-group">
               <label class="form-label" for="bd-name">${t('birthdays.nameLabel')}</label>
-              <input class="form-input" id="bd-name" type="text" value="${esc(birthday?.name || '')}" autocomplete="name">
+              <input class="form-input" id="bd-name" type="text" value="${esc(birthday?.name || '')}" autocomplete="name" ${isGoogle ? 'readonly' : ''}>
             </div>
             <div class="form-group">
               <label class="form-label" for="bd-birth-date">${t('birthdays.birthDateLabel')}</label>
-              <yuvomi-datepicker id="bd-birth-date" type="date" max="${today}" value="${esc(birthday?.birth_date || '')}"></yuvomi-datepicker>
+              <yuvomi-datepicker id="bd-birth-date" type="date" max="${today}" value="${esc(birthday?.birth_date || '')}" ${isGoogle ? 'disabled' : ''}></yuvomi-datepicker>
             </div>
+            ${isGoogle ? `<p class="form-hint">${t('birthdays.googleReadonlyHint')}</p>` : ''}
           </div>
         </div>
         ${advancedSection(`
@@ -311,7 +329,7 @@ function openBirthdayModal({ mode, birthday = null }) {
           { open: isEdit && (!!birthday?.notes || (!!birthday?.reminder_offset && birthday.reminder_offset !== '1440')) })}
         <div class="birthday-modal__hint">${t('birthdays.calendarHint')}</div>
         <div class="birthday-modal__footer">
-          ${isEdit ? `<button class="btn btn--danger" id="bd-delete">${t('common.delete')}</button>` : '<div></div>'}
+          ${isEdit && !isGoogle ? `<button class="btn btn--danger" id="bd-delete">${t('common.delete')}</button>` : '<div></div>'}
           <div class="birthday-modal__footer-actions">
             <button class="btn btn--secondary" type="button" id="bd-cancel">${t('common.cancel')}</button>
             <button class="btn btn--primary" type="button" id="bd-save">${isEdit ? t('common.save') : t('common.create')}</button>
@@ -363,17 +381,25 @@ function openBirthdayModal({ mode, birthday = null }) {
         const saveBtn = panel.querySelector('#bd-save');
         const birthDateRaw = panel.querySelector('#bd-birth-date').value;
         const birthDate = parseDateInput(birthDateRaw);
-        const body = {
-          name: panel.querySelector('#bd-name').value.trim(),
-          birth_date: birthDate,
-          notes: panel.querySelector('#bd-notes').value.trim(),
-          photo_data: photoData,
-          reminder_offset: panel.querySelector('#bd-reminder-offset').value,
-          reminder_custom_amount: panel.querySelector('#bd-reminder-custom-amount').value,
-          reminder_custom_unit: panel.querySelector('#bd-reminder-custom-unit').value,
-        };
+        // Für importierte Geburtstage nur die Erinnerungsfelder übertragen — die
+        // Route lehnt andere Felder mit 403 ab.
+        const body = isGoogle
+          ? {
+              reminder_offset: panel.querySelector('#bd-reminder-offset').value,
+              reminder_custom_amount: panel.querySelector('#bd-reminder-custom-amount').value,
+              reminder_custom_unit: panel.querySelector('#bd-reminder-custom-unit').value,
+            }
+          : {
+              name: panel.querySelector('#bd-name').value.trim(),
+              birth_date: birthDate,
+              notes: panel.querySelector('#bd-notes').value.trim(),
+              photo_data: photoData,
+              reminder_offset: panel.querySelector('#bd-reminder-offset').value,
+              reminder_custom_amount: panel.querySelector('#bd-reminder-custom-amount').value,
+              reminder_custom_unit: panel.querySelector('#bd-reminder-custom-unit').value,
+            };
 
-        if (!body.name || !body.birth_date || !isDateInputValid(birthDateRaw)) {
+        if (!isGoogle && (!body.name || !body.birth_date || !isDateInputValid(birthDateRaw))) {
           window.yuvomi?.showToast(t('birthdays.requiredFields'), 'warning');
           return;
         }

@@ -101,10 +101,28 @@ export function getLocalStorageConfig() {
   };
 }
 
+// Raw sync_config reader for cross-service keys (Google Drive backend) that do
+// not share the WebDAV CONFIG_PREFIX.
+function rawCfg(key) {
+  const row = db.get().prepare('SELECT value FROM sync_config WHERE key = ?').get(key);
+  return row?.value ?? null;
+}
+
+// Google Drive is an available upload backend when it is enabled, an upload
+// folder is chosen, and a Google account is connected (tokens present).
+function isGdriveUploadActive() {
+  return rawCfg('document_storage_gdrive_enabled') === '1'
+    && !!rawCfg('document_storage_gdrive_upload_folder_id')
+    && !!rawCfg('google_access_token')
+    && !!rawCfg('google_refresh_token');
+}
+
 // The upload backend that new documents will be written to, in precedence order:
-// a mounted local folder wins over WebDAV, which wins over the in-DB BLOB default.
+// a mounted local folder wins over Google Drive, which wins over WebDAV, which
+// wins over the in-DB BLOB default.
 export function getActiveUploadBackend() {
   if (getLocalStorageConfig().enabled) return 'local_folder';
+  if (isGdriveUploadActive()) return 'gdrive';
   if (getConfig().enabled) return 'webdav';
   return 'local';
 }
@@ -744,6 +762,30 @@ export async function stageDocumentUpload({
     };
   }
 
+  // Google Drive: neue Uploads in den gewählten Drive-Ordner schreiben.
+  // Lazy import hält googleapis als optionale Abhängigkeit außerhalb der
+  // Google-Services fern.
+  if (isGdriveUploadActive()) {
+    const folderId = rawCfg('document_storage_gdrive_upload_folder_id');
+    try {
+      const gdrive = await import('./google-drive.js');
+      const uploaded = await gdrive.uploadFile({ buffer: content, name: originalName, mime, folderId });
+      return {
+        storage_backend: 'gdrive',
+        storage_provider: 'external',
+        storage_key: uploaded.id,
+        external_url: uploaded.webViewLink,
+        content_data: '',
+      };
+    } catch (error) {
+      throw toStorageError(
+        error,
+        'DOCUMENT_STORAGE_UPLOAD_FAILED',
+        'The document could not be uploaded to Google Drive.'
+      );
+    }
+  }
+
   const config = getConfig();
   if (!config.enabled) {
     return {
@@ -861,6 +903,22 @@ export async function readDocumentContent(document, { dmsResolver } = {}) {
       mime: document.mime_type || 'application/octet-stream',
     };
   }
+  if (document.storage_backend === 'gdrive') {
+    // Inhalt aus Drive durchreichen. Zu große/native Dateien werfen
+    // ExternalOnlyError (storageCode DOCUMENT_STORAGE_EXTERNAL_ONLY) → die Route
+    // leitet dann auf external_url um.
+    const gdrive = await import('./google-drive.js');
+    try {
+      return await gdrive.downloadFile(document.storage_key);
+    } catch (error) {
+      if (error instanceof gdrive.ExternalOnlyError) throw error;
+      throw toStorageError(
+        error,
+        'DOCUMENT_STORAGE_READ_FAILED',
+        'The Google Drive document could not be read.'
+      );
+    }
+  }
   if (document.storage_backend === 'dms') {
     if (!dmsResolver) {
       throw new StorageError(
@@ -920,6 +978,22 @@ export async function readDocumentContent(document, { dmsResolver } = {}) {
 }
 
 export async function deleteDocumentContent(document) {
+  // Google Drive deletion: entfernt die Datei auch in Drive. Das In-App-Löschen
+  // eines (importierten oder hochgeladenen) Drive-Dokuments bedeutet bewusst,
+  // dass die Datei in Drive verschwindet.
+  if (document.storage_backend === 'gdrive') {
+    const gdrive = await import('./google-drive.js');
+    try {
+      await gdrive.deleteFile(document.storage_key);
+    } catch (error) {
+      throw toStorageError(
+        error,
+        'DOCUMENT_STORAGE_DELETE_FAILED',
+        'The Google Drive document could not be deleted.'
+      );
+    }
+    return;
+  }
   // WebDAV deletion
   if (document.storage_backend === 'webdav') {
     const config = requireWebdavConfig(getConfig());
